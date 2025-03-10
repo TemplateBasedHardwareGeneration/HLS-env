@@ -284,32 +284,8 @@ exit
             "error": f"执行过程中发生错误: {str(e)}",
             "raw_log": f"Exception occurred during execution: {str(e)}"
         }
-
-# 使用示例
-if __name__ == "__main__":
-    test_code = """
-void top(int a[100], int b[100], int res[100]) {
-    #pragma HLS INTERFACE m_axi port=a bundle=gmem
-    #pragma HLS INTERFACE m_axi port=b bundle=gmem
-    #pragma HLS INTERFACE m_axi port=res bundle=gmem
     
-    for (int i = 0; i < 100; i++) {
-        #pragma HLS PIPELINE II=1
-        res[i] = a[i] + b[i];
-    }
-}
-"""
-    
-    # 检查命令行参数，看是否提供了Vivado HLS路径
-    vivado_hls_path = None
-    if len(sys.argv) > 1:
-        vivado_hls_path = sys.argv[1]
-        print(f"使用指定的Vivado HLS路径: {vivado_hls_path}")
-    
-    # 如果没有提供路径，可以在这里手动指定
-    # vivado_hls_path = r"C:\Xilinx\Vivado\2018.3\bin\vivado_hls.bat"
-    
-    result = hls_evaluation(test_code, vivado_hls_path=vivado_hls_path)
+def print_result(result):
     print("HLS Evaluation Result:")
     if "error" in result:
         print(f"Error: {result['error']}")
@@ -341,3 +317,31 @@ void top(int a[100], int b[100], int res[100]) {
                 print(f"    {key}: {value}")
     
     print("完整日志保存在build目录中")
+
+
+# 使用示例
+if __name__ == "__main__":
+    test_code = """
+void top(int a[100], int b[100], int res[100]) {
+    #pragma HLS INTERFACE m_axi port=a bundle=gmem
+    #pragma HLS INTERFACE m_axi port=b bundle=gmem
+    #pragma HLS INTERFACE m_axi port=res bundle=gmem
+    
+    for (int i = 0; i < 100; i++) {
+        #pragma HLS PIPELINE II=1
+        res[i] = a[i] + b[i];
+    }
+}
+"""
+    
+    # 检查命令行参数，看是否提供了Vivado HLS路径
+    vivado_hls_path = None
+    if len(sys.argv) > 1:
+        vivado_hls_path = sys.argv[1]
+        print(f"使用指定的Vivado HLS路径: {vivado_hls_path}")
+    
+    # 如果没有提供路径，可以在这里手动指定
+    # vivado_hls_path = r"C:\Xilinx\Vivado\2018.3\bin\vivado_hls.bat"
+    
+    result = hls_evaluation(test_code, vivado_hls_path=vivado_hls_path)
+    print_result(result)
