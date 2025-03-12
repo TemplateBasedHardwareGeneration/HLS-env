@@ -147,40 +147,57 @@ exit
             print(f"找到报告文件: {report_file}")
             
             try:
-                with open(report_file, encoding="utf-8") as f:
+                with open(report_file, "r") as f:
                     content = f.read()
                     
                     # 保存报告内容以便调试
-                    with open(build_dir / "report_content.txt", "w", encoding="utf-8") as debug_f:
+                    debug_file = os.path.join(build_dir, "report_content.txt")
+                    with open(debug_file, "w") as debug_f:
                         debug_f.write(content)
                     
                     # 创建结果字典
-                    result = {
+                    report_results = {
                         "timing": {},
                         "latency": {},
-                        "utilization": {}
+                        "utilization": {
+                            "resources": {},
+                            "utilization_percentage": {}
+                        }
                     }
                     
                     # 解析Timing信息
                     timing_section = re.search(r"== Performance Estimates\s+=+\s+\+ Timing \(ns\):\s+\* Summary:\s+\+--------\+-------\+----------\+------------\+\s+\|  Clock \| Target\| Estimated\| Uncertainty\|\s+\+--------\+-------\+----------\+------------\+\s+\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|\s+\+--------\+-------\+----------\+------------\+", content)
                     
                     if timing_section:
-                        result["timing"] = {
+                        report_results["timing"] = {
                             "clock": timing_section.group(1).strip(),
                             "target": float(timing_section.group(2).strip()),
                             "estimated": float(timing_section.group(3).strip()),
                             "uncertainty": float(timing_section.group(4).strip())
                         }
                     
-                    # 解析Latency信息
-                    latency_section = re.search(r"\+ Latency \(clock cycles\):\s+\* Summary:\s+\+-----\+-----\+-----\+-----\+---------\+\s+\|  Latency  \|  Interval \| Pipeline\|\s+\| min \| max \| min \| max \|   Type  \|\s+\+-----\+-----\+-----\+-----\+---------\+\s+\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|\s+\+-----\+-----\+-----\+-----\+---------\+", content)
+                    # 解析Latency信息 - 修改以处理"?"值
+                    latency_section = re.search(r"\+ Latency \(clock cycles\):\s+\* Summary:\s+\+-----+\+-----+\+-----+\+-----+\+---------\+\s+\|  Latency  \|  Interval \| Pipeline\|\s+\| min \| max \| min \| max \|   Type  \|\s+\+-----+\+-----+\+-----+\+-----+\+---------\+\s+\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|\s+\+-----+\+-----+\+-----+\+-----+\+---------\+", content)
                     
                     if latency_section:
-                        result["latency"] = {
-                            "min": int(latency_section.group(1).strip()),
-                            "max": int(latency_section.group(2).strip()),
-                            "interval_min": int(latency_section.group(3).strip()),
-                            "interval_max": int(latency_section.group(4).strip()),
+                        # 安全地转换值，处理"?"的情况
+                        def safe_convert(value_str):
+                            value_str = value_str.strip()
+                            if value_str == "?":
+                                return "?"
+                            try:
+                                return int(value_str)
+                            except ValueError:
+                                try:
+                                    return float(value_str)
+                                except ValueError:
+                                    return value_str
+                        
+                        report_results["latency"] = {
+                            "min": safe_convert(latency_section.group(1).strip()),
+                            "max": safe_convert(latency_section.group(2).strip()),
+                            "interval_min": safe_convert(latency_section.group(3).strip()),
+                            "interval_max": safe_convert(latency_section.group(4).strip()),
                             "pipeline_type": latency_section.group(5).strip()
                         }
                     
@@ -188,78 +205,144 @@ exit
                     utilization_section = re.search(r"== Utilization Estimates\s+=+\s+\* Summary:\s+\+-----------------\+---------\+-------\+--------\+--------\+-----\+\s+\|       Name      \| BRAM_18K\| DSP48E\|   FF   \|   LUT  \| URAM\|\s+\+-----------------\+---------\+-------\+--------\+--------\+-----\+\s+\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|\s+\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|\s+\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|\s+\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|\s+\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|\s+\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|\s+\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|\s+\+-----------------\+---------\+-------\+--------\+--------\+-----\+\s+\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|\s+\+-----------------\+---------\+-------\+--------\+--------\+-----\+\s+\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|\s+\+-----------------\+---------\+-------\+--------\+--------\+-----\+\s+\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|\s+\+-----------------\+---------\+-------\+--------\+--------\+-----\+", content)
                     
                     if utilization_section:
-                        # 提取总资源使用情况（Total行）
-                        total_idx = 7  # Total行的索引
-                        available_idx = 8  # Available行的索引
-                        utilization_idx = 9  # Utilization行的索引
+                        # 找到Total, Available和Utilization行的索引
+                        total_idx = 0
+                        available_idx = 0
+                        utilization_idx = 0
                         
-                        # 使用一致的键名
-                        result["utilization"] = {
-                            "BRAM": int(utilization_section.group(total_idx * 6 + 2).strip()),
-                            "DSP": int(utilization_section.group(total_idx * 6 + 3).strip()),  # 使用DSP而不是DSP48E
-                            "FF": int(utilization_section.group(total_idx * 6 + 4).strip()),
-                            "LUT": int(utilization_section.group(total_idx * 6 + 5).strip()),
-                            "URAM": int(utilization_section.group(total_idx * 6 + 6).strip()),
-                            "available": {
-                                "BRAM": int(utilization_section.group(available_idx * 6 + 2).strip()),
-                                "DSP": int(utilization_section.group(available_idx * 6 + 3).strip()),  # 使用DSP而不是DSP48E
-                                "FF": int(utilization_section.group(available_idx * 6 + 4).strip()),
-                                "LUT": int(utilization_section.group(available_idx * 6 + 5).strip()),
-                                "URAM": int(utilization_section.group(available_idx * 6 + 6).strip())
-                            },
-                            "utilization_percentage": {
+                        for i in range(1, 10):  # 扩大搜索范围
+                            group_idx = i * 6 + 1
+                            if group_idx < len(utilization_section.groups()) and "Total" in utilization_section.group(group_idx):
+                                total_idx = i
+                            elif group_idx < len(utilization_section.groups()) and "Available" in utilization_section.group(group_idx):
+                                available_idx = i
+                            elif group_idx < len(utilization_section.groups()) and "Utilization" in utilization_section.group(group_idx):
+                                utilization_idx = i
+                        
+                        # 安全地转换资源值
+                        def safe_resource_convert(value_str):
+                            value_str = value_str.strip()
+                            if value_str == "?":
+                                return "?"
+                            elif value_str == "-":
+                                return 0
+                            try:
+                                return int(value_str)
+                            except ValueError:
+                                try:
+                                    return float(value_str)
+                                except ValueError:
+                                    return value_str
+                        
+                        if total_idx > 0:
+                            report_results["utilization"]["resources"] = {
+                                "BRAM": safe_resource_convert(utilization_section.group(total_idx * 6 + 2).strip()),
+                                "DSP": safe_resource_convert(utilization_section.group(total_idx * 6 + 3).strip()),
+                                "FF": safe_resource_convert(utilization_section.group(total_idx * 6 + 4).strip()),
+                                "LUT": safe_resource_convert(utilization_section.group(total_idx * 6 + 5).strip()),
+                                "URAM": safe_resource_convert(utilization_section.group(total_idx * 6 + 6).strip())
+                            }
+                        
+                        if available_idx > 0:
+                            report_results["utilization"]["available"] = {
+                                "BRAM": safe_resource_convert(utilization_section.group(available_idx * 6 + 2).strip()),
+                                "DSP": safe_resource_convert(utilization_section.group(available_idx * 6 + 3).strip()),
+                                "FF": safe_resource_convert(utilization_section.group(available_idx * 6 + 4).strip()),
+                                "LUT": safe_resource_convert(utilization_section.group(available_idx * 6 + 5).strip()),
+                                "URAM": safe_resource_convert(utilization_section.group(available_idx * 6 + 6).strip())
+                            }
+                        
+                        if utilization_idx > 0:
+                            report_results["utilization"]["utilization_percentage"] = {
                                 "BRAM": utilization_section.group(utilization_idx * 6 + 2).strip(),
-                                "DSP": utilization_section.group(utilization_idx * 6 + 3).strip(),  # 使用DSP而不是DSP48E
+                                "DSP": utilization_section.group(utilization_idx * 6 + 3).strip(),
                                 "FF": utilization_section.group(utilization_idx * 6 + 4).strip(),
                                 "LUT": utilization_section.group(utilization_idx * 6 + 5).strip(),
                                 "URAM": utilization_section.group(utilization_idx * 6 + 6).strip()
                             }
-                        }
                     
                     # 如果正则表达式匹配失败，尝试使用更简单的方法提取关键信息
-                    if not result["timing"] or not result["latency"] or not result["utilization"]:
-                        print("使用备用方法解析报告...")
+                    if not timing_section and not latency_section and not utilization_section:
+                        print("警告：无法使用正则表达式解析报告文件，尝试使用简单方法提取信息")
                         
-                        # 提取Timing信息
-                        if not result["timing"]:
-                            target_match = re.search(r"Target\|\s+\|[^|]+\|\s+([\d.]+)", content)
-                            estimated_match = re.search(r"Estimated\|\s+\|[^|]+\|\s+([\d.]+)", content)
-                            
-                            if target_match and estimated_match:
-                                result["timing"] = {
-                                    "target": float(target_match.group(1)),
-                                    "estimated": float(estimated_match.group(1))
-                                }
+                        # 简单提取Timing信息
+                        if "Timing (ns)" in content:
+                            timing_lines = content.split("Timing (ns)")[1].split("* Summary:")[1].split("\n")
+                            for line in timing_lines:
+                                if "|" in line and "Clock" not in line and "---" not in line:
+                                    parts = line.split("|")
+                                    if len(parts) >= 5:
+                                        report_results["timing"] = {
+                                            "clock": parts[1].strip(),
+                                            "target": float(parts[2].strip()),
+                                            "estimated": float(parts[3].strip()),
+                                            "uncertainty": float(parts[4].strip())
+                                        }
+                                        break
                         
-                        # 提取Latency信息
-                        if not result["latency"]:
-                            latency_match = re.search(r"\|\s+(\d+)\s+\|\s+(\d+)\s+\|\s+(\d+)\s+\|\s+(\d+)\s+\|\s+([a-z]+)\s+\|", content)
-                            
-                            if latency_match:
-                                result["latency"] = {
-                                    "min": int(latency_match.group(1)),
-                                    "max": int(latency_match.group(2)),
-                                    "interval_min": int(latency_match.group(3)),
-                                    "interval_max": int(latency_match.group(4)),
-                                    "pipeline_type": latency_match.group(5)
-                                }
+                        # 简单提取Latency信息
+                        if "Latency (clock cycles)" in content:
+                            latency_lines = content.split("Latency (clock cycles)")[1].split("* Summary:")[1].split("\n")
+                            for i, line in enumerate(latency_lines):
+                                if "|" in line and "min" not in line and "---" not in line:
+                                    parts = line.split("|")
+                                    if len(parts) >= 7:
+                                        report_results["latency"] = {
+                                            "min": safe_convert(parts[1].strip()),
+                                            "max": safe_convert(parts[2].strip()),
+                                            "interval_min": safe_convert(parts[3].strip()),
+                                            "interval_max": safe_convert(parts[4].strip()),
+                                            "pipeline_type": parts[5].strip()
+                                        }
+                                        break
                         
-                        # 提取Utilization信息
-                        if not result["utilization"]:
-                            bram_match = re.search(r"BRAM_18K\s+\|\s+(\d+)", content)
-                            dsp_match = re.search(r"DSP48E\s+\|\s+(\d+)", content)
-                            ff_match = re.search(r"FF\s+\|\s+(\d+)", content)
-                            lut_match = re.search(r"LUT\s+\|\s+(\d+)", content)
+                        # 简单提取Utilization信息
+                        if "Utilization Estimates" in content:
+                            util_lines = content.split("Utilization Estimates")[1].split("* Summary:")[1].split("\n")
+                            total_line = None
+                            available_line = None
+                            utilization_line = None
                             
-                            if bram_match and dsp_match and ff_match and lut_match:
-                                result["utilization"] = {
-                                    "BRAM": int(bram_match.group(1)),
-                                    "DSP": int(dsp_match.group(1)),  # 使用DSP而不是DSP48E
-                                    "FF": int(ff_match.group(1)),
-                                    "LUT": int(lut_match.group(1))
-                                }
+                            for line in util_lines:
+                                if "|" in line:
+                                    if "Total" in line:
+                                        total_line = line
+                                    elif "Available" in line:
+                                        available_line = line
+                                    elif "Utilization" in line:
+                                        utilization_line = line
+                            
+                            if total_line and available_line and utilization_line:
+                                total_parts = total_line.split("|")
+                                available_parts = available_line.split("|")
+                                utilization_parts = utilization_line.split("|")
+                                
+                                if len(total_parts) >= 6 and len(available_parts) >= 6 and len(utilization_parts) >= 6:
+                                    report_results["utilization"]["resources"] = {
+                                        "BRAM": safe_resource_convert(total_parts[2].strip()),
+                                        "DSP": safe_resource_convert(total_parts[3].strip()),
+                                        "FF": safe_resource_convert(total_parts[4].strip()),
+                                        "LUT": safe_resource_convert(total_parts[5].strip()),
+                                        "URAM": safe_resource_convert(total_parts[6].strip() if len(total_parts) > 6 else "0")
+                                    }
+                                    
+                                    report_results["utilization"]["available"] = {
+                                        "BRAM": safe_resource_convert(available_parts[2].strip()),
+                                        "DSP": safe_resource_convert(available_parts[3].strip()),
+                                        "FF": safe_resource_convert(available_parts[4].strip()),
+                                        "LUT": safe_resource_convert(available_parts[5].strip()),
+                                        "URAM": safe_resource_convert(available_parts[6].strip() if len(available_parts) > 6 else "0")
+                                    }
+                                    
+                                    report_results["utilization"]["utilization_percentage"] = {
+                                        "BRAM": utilization_parts[2].strip(),
+                                        "DSP": utilization_parts[3].strip(),
+                                        "FF": utilization_parts[4].strip(),
+                                        "LUT": utilization_parts[5].strip(),
+                                        "URAM": utilization_parts[6].strip() if len(utilization_parts) > 6 else "0%"
+                                    }
                     
-                    return result
+                    return report_results
             except Exception as e:
                 print(f"解析报告文件时出错: {str(e)}")
                 return {
@@ -277,46 +360,74 @@ exit
             "timing": report_results.get("timing", {}),
             "latency": report_results.get("latency", {}),
             "utilization": report_results.get("utilization", {}),
-            "raw_log": proc.stdout
+            "raw_log": proc.stdout,
+            "log_file": build_dir / "vivado_hls.log"
         }
     except Exception as e:
         return {
             "error": f"执行过程中发生错误: {str(e)}",
-            "raw_log": f"Exception occurred during execution: {str(e)}"
+            "raw_log": f"Exception occurred during execution: {str(e)}",
+            "log_file": None
         }
     
-def print_result(result):
-    print("HLS Evaluation Result:")
+def print_result(result: dict):
+    """
+    打印HLS评估结果
+    :param result: hls_evaluation返回的结果字典
+    """
+    print("\nHLS Evaluation Result:")
+    
     if "error" in result:
         print(f"Error: {result['error']}")
-    else:
-        print("Timing Information:")
+        print(f"\n完整日志保存在: {result.get('log_file', 'build目录')}")
+        return
+    
+    # 打印时序信息
+    print("Timing Information:")
+    if "timing" in result and result["timing"]:
         for key, value in result["timing"].items():
             print(f"  {key}: {value}")
-        
-        print("\nLatency Information:")
+    else:
+        print("  No timing information available")
+    
+    # 打印延迟信息
+    print("\nLatency Information:")
+    if "latency" in result and result["latency"]:
         for key, value in result["latency"].items():
             print(f"  {key}: {value}")
-        
-        print("\nResource Utilization:")
-        # 打印基本资源使用情况
-        for key, value in result["utilization"].items():
-            if key not in ["available", "utilization_percentage"]:
-                print(f"  {key}: {value}")
+    else:
+        print("  No latency information available")
+    
+    # 打印资源利用率
+    print("\nResource Utilization:")
+    if "utilization" in result and result["utilization"]:
+        # 打印资源使用情况
+        if "resources" in result["utilization"] and result["utilization"]["resources"]:
+            print("  Resources:")
+            for key, value in result["utilization"]["resources"].items():
+                print(f"    {key}: {value}")
+        elif isinstance(result["utilization"], dict) and not all(k in ["available", "utilization_percentage"] for k in result["utilization"].keys()):
+            # 兼容旧格式
+            print("  Resources:")
+            for key, value in result["utilization"].items():
+                if key not in ["available", "utilization_percentage"]:
+                    print(f"    {key}: {value}")
         
         # 打印可用资源
-        if "available" in result["utilization"]:
+        if "available" in result["utilization"] and result["utilization"]["available"]:
             print("  Available Resources:")
             for key, value in result["utilization"]["available"].items():
                 print(f"    {key}: {value}")
         
         # 打印使用百分比
-        if "utilization_percentage" in result["utilization"]:
+        if "utilization_percentage" in result["utilization"] and result["utilization"]["utilization_percentage"]:
             print("  Utilization Percentage:")
             for key, value in result["utilization"]["utilization_percentage"].items():
                 print(f"    {key}: {value}")
+    else:
+        print("  No resource utilization information available")
     
-    print("完整日志保存在build目录中")
+    print(f"\n完整日志保存在: {result.get('log_file', 'build目录')}")
 
 
 # 使用示例
