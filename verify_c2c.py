@@ -1,6 +1,7 @@
 from hls_script import hls_evaluation, print_result
 import os
 import re
+import argparse  # 添加argparse模块
 
 def verify_hls_code(code_str: str, top_function: str = "top", target_device: str = "xczu7ev-ffvc1156-2-e", 
                   clock_period: float = 5.0, vivado_hls_path: str = None, header_files: dict = None) -> dict:
@@ -87,9 +88,8 @@ def verify_example(example, vivado_hls_path=None):
         vivado_hls_path=vivado_hls_path,
         header_files=header_files
     )
-    
     # 检查源代码是否不可综合
-    source_synthesizable = source_result.get("success", False) and "error" not in source_result
+    source_synthesizable = True if "timing" in source_result and source_result["timing"] else False
     
     if not source_synthesizable:
         print("源代码验证结果: Pass (不可综合，符合预期)")
@@ -104,9 +104,9 @@ def verify_example(example, vivado_hls_path=None):
         vivado_hls_path=vivado_hls_path,
         header_files=header_files
     )
-    
+    print_result(rewritten_result)
     # 检查转写后代码是否可综合
-    rewritten_synthesizable = rewritten_result.get("success", False) and "error" not in rewritten_result
+    rewritten_synthesizable = True if "timing" in rewritten_result and rewritten_result["timing"] else False
     
     if rewritten_synthesizable:
         print("转写后代码验证结果: Pass (可综合，符合预期)")
@@ -122,12 +122,13 @@ def verify_example(example, vivado_hls_path=None):
         'overall_pass': not source_synthesizable and rewritten_synthesizable
     }
 
-def verify_all_examples(c2c_md_path, vivado_hls_path=None):
+def verify_all_examples(c2c_md_path, vivado_hls_path=None, start_index=1):
     """
     验证c2c.md中的所有示例
     
     :param c2c_md_path: c2c.md文件路径
     :param vivado_hls_path: Vivado HLS路径
+    :param start_index: 开始验证的示例索引（从1开始）
     :return: 验证结果列表
     """
     examples = parse_c2c_md(c2c_md_path)
@@ -136,10 +137,17 @@ def verify_all_examples(c2c_md_path, vivado_hls_path=None):
         print("未找到示例或解析失败")
         return []
     
-    print(f"找到 {len(examples)} 个示例")
+    # 过滤示例，只保留索引大于等于start_index的示例
+    filtered_examples = [ex for ex in examples if int(ex['number']) >= start_index]
+    
+    if not filtered_examples:
+        print(f"没有找到索引大于等于 {start_index} 的示例")
+        return []
+    
+    print(f"找到 {len(examples)} 个示例，将从索引 {start_index} 开始验证 {len(filtered_examples)} 个示例")
     
     results = []
-    for example in examples:
+    for example in filtered_examples:
         result = verify_example(example, vivado_hls_path)
         results.append(result)
     
@@ -157,8 +165,15 @@ def verify_all_examples(c2c_md_path, vivado_hls_path=None):
     return results
 
 if __name__ == "__main__":
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description='验证c2c.md中的HLS代码示例')
+    parser.add_argument('-i', '--index', type=int, default=1, help='开始验证的示例索引（从1开始）')
+    parser.add_argument('-p', '--path', type=str, help='Vivado HLS路径')
+    parser.add_argument('-f', '--file', type=str, default="../HLS-data/c2c/c2c.md", help='c2c.md文件路径')
+    args = parser.parse_args()
+    
     # c2c.md文件路径
-    c2c_md_path = "../HLS-data/c2c/c2c.md"
+    c2c_md_path = args.file
     
     # 检查文件是否存在
     if not os.path.exists(c2c_md_path):
@@ -171,5 +186,5 @@ if __name__ == "__main__":
                     print(f"找到文件: {c2c_md_path}")
                     break
     
-    # 验证所有示例
-    verify_all_examples(c2c_md_path)
+    # 验证所有示例，从指定索引开始
+    verify_all_examples(c2c_md_path, vivado_hls_path=args.path, start_index=args.index)
