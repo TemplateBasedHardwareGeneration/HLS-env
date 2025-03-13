@@ -31,20 +31,31 @@ def verify_hls_code(code_str: str, top_function: str = "top", target_device: str
 if __name__ == "__main__":
     # 测试带有未知循环次数的函数
     code_str = """
-int fib(int n) {
-    int a=0, b=1, c;
-    for(int i=0; i<n; i++) { 
-        c=a+b; 
-        a=b; 
-        b=c; 
-    }
-    return a;
+int shift_func(int *in1, int *in2, int *outA, int *outB)
+{
+	*outA = *in1 >> 1;
+	*outB = *in2 >> 2;
+}
+
+void hier_func4(int A, int B, int *C, int *D)
+{
+ 	int apb, amb;
+
+#ifndef __SYNTHESIS__
+ 	FILE *fp1; // The following code is ignored for synthesis
+ 	char filename[255];
+ 	sprintf(filename,Out_apb_%03d.dat,apb);
+ 	fp1=fopen(filename,w);
+ 	fprintf(fp1, %d \n, apb);
+ 	fclose(fp1);
+#endif
+ 	shift_func(&apb,&amb,C,D);
 }
 """
 
     # 选择要测试的代码
     test_code = code_str  # 测试带有未知循环次数的函数
-    test_function = "fib"
+    test_function = "hier_func4"
     
     # 运行测试
     result = verify_hls_code(test_code, test_function)

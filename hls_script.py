@@ -120,7 +120,7 @@ exit
             report_dir = build_dir / f"{top_function}_prj" / "solution1" / "syn" / "report"
             
             # 等待报告文件生成（最多等待5秒）
-            max_wait = 5
+            max_wait = 3
             wait_time = 0
             while wait_time < max_wait:
                 if report_dir.exists():
