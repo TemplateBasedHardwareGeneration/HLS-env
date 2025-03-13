@@ -31,23 +31,30 @@ def verify_hls_code(code_str: str, top_function: str = "top", target_device: str
 if __name__ == "__main__":
     # 测试带有未知循环次数的函数
     code_str = """
-void undef_behavior(int cond, int N){
+#include <stdexcept>
 
-    for (int i=0; i<N; i++) {
-        int val; // uninitialized value
-        if (i==0) val=0;
-        else if (cond) val=1;
-        // val may have indeterminate value here
-        int A = val; // undefined behavior
-        val++;
+int array_access(int arr[], int size, int index) {
+    try {
+        if (index < 0 || index >= size) {
+            throw std::out_of_range("Index out of bounds");
+        }
+        return arr[index];
+    } catch (const std::out_of_range& e) {
+        return -1; // 默认错误值
     }
+}
 
+void my_array(){
+    int arr[] = {1, 2, 3, 4, 5};
+    int size = sizeof(arr) / sizeof(arr[0]);
+    int index = 2;
+    array_access(arr, size, index);
 }
 """
 
     # 选择要测试的代码
     test_code = code_str  # 测试带有未知循环次数的函数
-    test_function = "undef_behavior"
+    test_function = "my_array"
     
     # 运行测试
     result = verify_hls_code(test_code, test_function)

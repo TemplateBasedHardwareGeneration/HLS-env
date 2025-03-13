@@ -2,6 +2,7 @@ from hls_script import hls_evaluation, print_result
 import os
 import re
 import argparse  # 添加argparse模块
+import time
 
 def verify_hls_code(code_str: str, top_function: str = "top", target_device: str = "xczu7ev-ffvc1156-2-e", 
                   clock_period: float = 5.0, vivado_hls_path: str = None, header_files: dict = None) -> dict:
@@ -122,13 +123,14 @@ def verify_example(example, vivado_hls_path=None):
         'overall_pass': not source_synthesizable and rewritten_synthesizable
     }
 
-def verify_all_examples(c2c_md_path, vivado_hls_path=None, start_index=1):
+def verify_all_examples(c2c_md_path, vivado_hls_path=None, start_index=1, end_index=-1):
     """
     验证c2c.md中的所有示例
     
     :param c2c_md_path: c2c.md文件路径
     :param vivado_hls_path: Vivado HLS路径
     :param start_index: 开始验证的示例索引（从1开始）
+    :param end_index: 结束验证的示例索引（包含），默认为-1表示验证到最后
     :return: 验证结果列表
     """
     examples = parse_c2c_md(c2c_md_path)
@@ -137,14 +139,21 @@ def verify_all_examples(c2c_md_path, vivado_hls_path=None, start_index=1):
         print("未找到示例或解析失败")
         return []
     
-    # 过滤示例，只保留索引大于等于start_index的示例
-    filtered_examples = [ex for ex in examples if int(ex['number']) >= start_index]
+    # 过滤示例，只保留索引在指定范围内的示例
+    filtered_examples = []
+    for ex in examples:
+        ex_num = int(ex['number'])
+        if ex_num >= start_index and (end_index == -1 or ex_num <= end_index):
+            filtered_examples.append(ex)
     
     if not filtered_examples:
-        print(f"没有找到索引大于等于 {start_index} 的示例")
+        print(f"没有找到索引在范围 [{start_index}, {end_index if end_index != -1 else '最后'}] 内的示例")
         return []
     
-    print(f"找到 {len(examples)} 个示例，将从索引 {start_index} 开始验证 {len(filtered_examples)} 个示例")
+    if end_index == -1:
+        print(f"找到 {len(examples)} 个示例，将验证从索引 {start_index} 开始的 {len(filtered_examples)} 个示例")
+    else:
+        print(f"找到 {len(examples)} 个示例，将验证索引范围在 [{start_index}, {end_index}] 内的 {len(filtered_examples)} 个示例")
     
     results = []
     for example in filtered_examples:
@@ -168,6 +177,7 @@ if __name__ == "__main__":
     # 解析命令行参数
     parser = argparse.ArgumentParser(description='验证c2c.md中的HLS代码示例')
     parser.add_argument('-i', '--index', type=int, default=1, help='开始验证的示例索引（从1开始）')
+    parser.add_argument('-e', '--end', type=int, default=-1, help='结束验证的示例索引（包含），默认为-1表示验证到最后')
     parser.add_argument('-p', '--path', type=str, help='Vivado HLS路径')
     parser.add_argument('-f', '--file', type=str, default="../HLS-data/c2c/c2c.md", help='c2c.md文件路径')
     args = parser.parse_args()
@@ -185,6 +195,8 @@ if __name__ == "__main__":
                     c2c_md_path = os.path.join(root, file)
                     print(f"找到文件: {c2c_md_path}")
                     break
-    
-    # 验证所有示例，从指定索引开始
-    verify_all_examples(c2c_md_path, vivado_hls_path=args.path, start_index=args.index)
+    start_time = time.time()
+    # 验证指定范围内的示例
+    verify_all_examples(c2c_md_path, vivado_hls_path=args.path, start_index=args.index, end_index=args.end)
+    end_time = time.time()
+    print(f"验证完成，用时 {round(end_time - start_time, 2)} 秒")
